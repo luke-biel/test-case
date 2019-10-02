@@ -53,7 +53,7 @@ mod test_cases {
     }
 
     #[test_case(2, 2 => 2 + 3)]
-    #[should_panic]
+    #[should_panic(expected = "assertion failed: `(left == right)`")]
     fn result_which_panics(x: u32, y: u32) -> u32 {
         x + y
     }
@@ -142,5 +142,22 @@ mod test_cases {
     #[test_case(""     => String::default())]
     fn foo(_: &str) -> String {
         String::default()
+    }
+
+    #[derive(Debug)]
+    enum SimpleEnum {
+        Var1(i32),
+        Var2(char, i32)
+    }
+
+    #[test_case(SimpleEnum::Var2('a', 4) => match SimpleEnum::Var2(_, 4))]
+    fn pattern_matching_result(e: SimpleEnum) -> SimpleEnum {
+        e
+    }
+
+    #[should_panic(expected = "Expected SimpleEnum :: Var2 (_, 5) found Var2('a', 4)")]
+    #[test_case(SimpleEnum::Var2('a', 4) => match SimpleEnum::Var2(_, 5))]
+    fn pattern_matching_result_fails(e: SimpleEnum) -> SimpleEnum {
+        e
     }
 }

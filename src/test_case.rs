@@ -1,16 +1,19 @@
-use proc_macro2::Ident;
 use quote::quote;
 use quote::ToTokens;
 use syn::export::TokenStream2;
 use syn::parse::{Parse, ParseStream};
-use syn::parse_quote;
-use syn::{Error, Expr, ItemFn, LitStr, Token};
+use syn::{parse_quote, Pat, Error, Expr, ItemFn, LitStr, Token, Ident};
 
 pub struct TestCase {
     test_case_name: String,
     args: Vec<Expr>,
-    expected: Option<Expr>,
+    expected: Option<Expected>,
     case_desc: Option<LitStr>,
+}
+
+pub enum Expected {
+    Pat(Pat),
+    Expr(Expr)
 }
 
 fn fmt_syn(syn: &(impl ToTokens + Clone)) -> String {
@@ -35,9 +38,19 @@ impl Parse for TestCase {
         let arrow: Option<Token![=>]> = input.parse()?;
 
         let expected = if arrow.is_some() {
-            let expr: Expr = input.parse()?;
-            test_case_name += &format!(" expects {}", fmt_syn(&expr));
-            Some(expr)
+            let lookahead = input.lookahead1();
+            if lookahead.peek(Token![match]) {
+                let _kw : Token![match] = input.parse()?;
+                let pat = input.parse()?;
+                test_case_name += &format!(" expects {}", fmt_syn(&pat));
+
+                Some(Expected::Pat(pat))
+            }
+            else {
+                let expr = input.parse()?;
+                test_case_name += &format!(" expects {}", fmt_syn(&expr));
+                Some(Expected::Expr(expr))
+            }
         } else {
             None
         };
@@ -80,8 +93,17 @@ impl TestCase {
             .unwrap_or_default();
 
         let expected: Expr = match &self.expected {
-            Some(e) => parse_quote! {
-                assert_eq!(#e, _result)
+            Some(Expected::Pat(pat)) => {
+                let pat_str = format!("{}", quote! { #pat });
+                parse_quote! {
+                    match _result {
+                        #pat => (),
+                        e => panic!("Expected {} found {:?}", #pat_str, e)
+                    }
+                }
+            },
+            Some(Expected::Expr(e)) => {
+                parse_quote! { assert_eq!(#e, _result) }
             },
             None => parse_quote! {()},
         };
@@ -96,7 +118,7 @@ impl TestCase {
             #[test]
             #(#attrs)*
             fn #test_case_name() {
-                let _result = #item_name(#(#arg_values),*);//{ #item_body };
+                let _result = #item_name(#(#arg_values),*);
                 #expected
             }
         }
